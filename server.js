@@ -7,13 +7,11 @@ const cors = require('cors');
 // Check if FIREBASE_CREDENTIALS environment variable exists
 if (!process.env.FIREBASE_CREDENTIALS) {
     console.error("Error: FIREBASE_CREDENTIALS environment variable is missing.");
-    process.exit(1); // Exit the process with an error code
+    process.exit(1);
 }
 
 let serviceAccount;
-
 try {
-    // Parse Firebase credentials from the environment variable
     serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
 } catch (error) {
     console.error("Error parsing FIREBASE_CREDENTIALS:", error);
@@ -31,10 +29,11 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "*"
+        origin: ["http://yourfrontend.com"], // Change this to your frontend URL
+        methods: ["GET", "POST"]
     }
 });
-app.use(cors());
+app.use(cors({ origin: ["http://yourfrontend.com"] }));
 
 let visitorCount = 0;
 
@@ -42,14 +41,39 @@ io.on('connection', async (socket) => {
     visitorCount++;
     io.emit('updateCount', visitorCount);
 
-    const visitRef = db.collection('visits').doc();
-    await visitRef.set({ timestamp: new Date() });
+    // Capture client details
+    const clientIp = socket.handshake.address;
+    const userAgent = socket.handshake.headers['user-agent'];
+
+    try {
+        const visitRef = db.collection('visits').doc();
+        await visitRef.set({
+            timestamp: new Date(),
+            ip: clientIp,
+            userAgent: userAgent
+        });
+    } catch (error) {
+        console.error("Error logging visit:", error);
+    }
 
     socket.on('disconnect', () => {
-        visitorCount--;
+        visitorCount = Math.max(0, visitorCount - 1); // Ensure visitor count doesn't go negative
         io.emit('updateCount', visitorCount);
     });
 });
+
+// API endpoint to fetch visit logs
+app.get('/visits', async (req, res) => {
+    try {
+        const snapshot = await db.collection('visits').orderBy('timestamp', 'desc').limit(50).get();
+        const visits = snapshot.docs.map(doc => doc.data());
+        res.json({ success: true, data: visits });
+    } catch (error) {
+        console.error("Error fetching visits:", error);
+        res.status(500).json({ success: false, message: "Error retrieving visit logs" });
+    }
+});
+
 app.get('/', (req, res) => {
     res.send('Traffic Monitor Backend is Running!');
 });
