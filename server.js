@@ -50,6 +50,9 @@ io.on('connection', async (socket) => {
         io.emit('updateCount', visitorCount);
     });
 });
+app.get('/', (req, res) => {
+    res.send('Traffic Monitor Backend is Running!');
+});
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
