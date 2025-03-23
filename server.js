@@ -4,11 +4,27 @@ const socketIo = require('socket.io');
 const admin = require('firebase-admin');
 const cors = require('cors');
 
-// Firebase Setup
-const serviceAccount = require('./firebase-key.json'); // Download this from Firebase
+// Check if FIREBASE_CREDENTIALS environment variable exists
+if (!process.env.FIREBASE_CREDENTIALS) {
+    console.error("Error: FIREBASE_CREDENTIALS environment variable is missing.");
+    process.exit(1); // Exit the process with an error code
+}
+
+let serviceAccount;
+
+try {
+    // Parse Firebase credentials from the environment variable
+    serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
+} catch (error) {
+    console.error("Error parsing FIREBASE_CREDENTIALS:", error);
+    process.exit(1);
+}
+
+// Initialize Firebase Admin SDK
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
+
 const db = admin.firestore();
 
 const app = express();
@@ -35,4 +51,5 @@ io.on('connection', async (socket) => {
     });
 });
 
-server.listen(3000, () => console.log('Server running on port 3000'));
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
