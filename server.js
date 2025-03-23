@@ -4,7 +4,7 @@ const socketIo = require('socket.io');
 const admin = require('firebase-admin');
 const cors = require('cors');
 
-// Check if FIREBASE_CREDENTIALS environment variable exists
+// ✅ Ensure Firebase Credentials Exist
 if (!process.env.FIREBASE_CREDENTIALS) {
     console.error("Error: FIREBASE_CREDENTIALS environment variable is missing.");
     process.exit(1);
@@ -18,7 +18,7 @@ try {
     process.exit(1);
 }
 
-// Initialize Firebase Admin SDK
+// ✅ Initialize Firebase Admin SDK
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
@@ -29,26 +29,28 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: ["http://yourfrontend.com"], // Change this to your frontend URL
+        origin: "*", // Allow all origins for now, update with frontend URL in production
         methods: ["GET", "POST"]
     }
 });
-app.use(cors({ origin: ["http://yourfrontend.com"] }));
 
-let visitorCount = 0;
+// ✅ CORS Middleware
+app.use(cors({ origin: "*" })); // Change * to specific frontend URL for production
+
+// 🔥 Store Active Users
+let activeUsers = new Set();
 
 io.on('connection', async (socket) => {
-    visitorCount++;
-    io.emit('updateCount', visitorCount);
-
-    // Capture client details
-    const clientIp = socket.handshake.address;
+    const clientIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
     const userAgent = socket.handshake.headers['user-agent'];
 
+    activeUsers.add(clientIp);
+    io.emit('updateCount', activeUsers.size); // Broadcast updated active users count
+
     try {
-        const visitRef = db.collection('visits').doc();
-        await visitRef.set({
-            timestamp: new Date(),
+        // ✅ Log Visit to Firestore
+        await db.collection('visits').add({
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
             ip: clientIp,
             userAgent: userAgent
         });
@@ -57,12 +59,12 @@ io.on('connection', async (socket) => {
     }
 
     socket.on('disconnect', () => {
-        visitorCount = Math.max(0, visitorCount - 1); // Ensure visitor count doesn't go negative
-        io.emit('updateCount', visitorCount);
+        activeUsers.delete(clientIp);
+        io.emit('updateCount', activeUsers.size);
     });
 });
 
-// API endpoint to fetch visit logs
+// ✅ API Endpoint to Fetch Visit Logs
 app.get('/visits', async (req, res) => {
     try {
         const snapshot = await db.collection('visits').orderBy('timestamp', 'desc').limit(50).get();
@@ -74,9 +76,11 @@ app.get('/visits', async (req, res) => {
     }
 });
 
+// ✅ Root Route for Testing
 app.get('/', (req, res) => {
-    res.send('Traffic Monitor Backend is Running!');
+    res.send('🔥 Traffic Monitor Backend is Running! 🔥');
 });
 
+// ✅ Start the Server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
