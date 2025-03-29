@@ -3,6 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const admin = require('firebase-admin');
 const cors = require('cors');
+const axios = require('axios'); // <-- Add axios for location lookup
 
 if (!process.env.FIREBASE_CREDENTIALS) {
     console.error("❌ FIREBASE_CREDENTIALS environment variable is missing.");
@@ -35,25 +36,50 @@ const io = socketIo(server, {
 
 app.use(cors({ origin: "*" }));
 
-// ✅ Store Active Users
+//✅ Store Active Users
 let activeUsers = new Map();
 
-io.on("connection", (socket) => {
-    const clientIp = socket.handshake.headers["x-forwarded-for"] || socket.handshake.address;
-    const userAgent = socket.handshake.headers["user-agent"];
-    const origin = socket.handshake.headers["origin"]; // Get the origin of the request
+io.on('connection', async (socket) => {
+    const clientIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
+    const userAgent = socket.handshake.headers['user-agent'];
+    const timestamp = new Date();
 
-    // ✅ Allow logging ONLY if the request comes from your frontend
-    if (origin === "https://review-system-backend-topaz.vercel.app") {
-        activeUsers.set(socket.id, { ip: clientIp, userAgent });
-
-        io.emit("activeUsers", Array.from(activeUsers.values()));
-        console.log(`🟢 New Visitor: ${clientIp} from ${origin}`);
+    // 📍 Get location info using ipapi
+    let locationData = {};
+    try {
+        const response = await axios.get(`https://ipapi.co/${clientIp}/json/`);
+        locationData = {
+            city: response.data.city,
+            region: response.data.region,
+            country: response.data.country_name,
+            org: response.data.org
+        };
+    } catch (error) {
+        console.warn("🌐 Could not fetch location:", error.message);
     }
 
-    socket.on("disconnect", () => {
+    // 📝 Log to Firestore
+    try {
+        await db.collection('visitors').add({
+            ip: clientIp,
+            userAgent,
+            timestamp,
+            location: locationData,
+            socketId: socket.id
+        });
+        console.log(`📝 Logged visitor: ${clientIp}`);
+    } catch (err) {
+        console.error("❌ Firestore log error:", err);
+    }
+
+    activeUsers.set(socket.id, { ip: clientIp, userAgent });
+
+    io.emit('activeUsers', Array.from(activeUsers.values()));
+    console.log(`🟢 New Visitor: ${clientIp}`);
+
+    socket.on('disconnect', () => {
         activeUsers.delete(socket.id);
-        io.emit("activeUsers", Array.from(activeUsers.values()));
+        io.emit('activeUsers', Array.from(activeUsers.values()));
         console.log(`🔴 Visitor Left: ${clientIp}`);
     });
 });
