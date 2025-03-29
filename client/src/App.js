@@ -1,51 +1,61 @@
-// client/src/App.js
-import React, { useEffect, useState } from "react";
-import io from "socket.io-client";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
-} from "recharts";
+import React, { useEffect, useState } from 'react';
+import io from 'socket.io-client';
 
-const socket = io("https://trafficmonitorbackend.onrender.com");
+const socket = io('https://trafficmonitorbackend.onrender.com'); // your backend
 
-function App() {
-  const [data, setData] = useState([]);
+const App = () => {
+  const [activeUsers, setActiveUsers] = useState([]);
 
   useEffect(() => {
-    // Simulate request per second (or per interval)
-    let requestCount = 0;
-
-    // Listen for active users
-    socket.on("activeUsers", (users) => {
-      requestCount++; // Each socket update is considered one "event/request"
-
-      const timestamp = new Date().toLocaleTimeString();
-
-      setData((prev) => {
-        const newData = [...prev, { time: timestamp, requests: requestCount }];
-        return newData.slice(-10); // Keep only latest 10 points
-      });
+    socket.on('activeUsers', (users) => {
+      setActiveUsers(users);
     });
 
-    return () => {
-      socket.disconnect();
-    };
+    return () => socket.disconnect();
   }, []);
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h2>📊 Live Traffic Visualization</h2>
-      <ResponsiveContainer width="100%" height={400}>
-        <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="time" />
-          <YAxis allowDecimals={false} />
-          <Tooltip />
-          <Legend />
-          <Line type="monotone" dataKey="requests" stroke="#8884d8" activeDot={{ r: 8 }} />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white p-4 text-gray-800 font-sans">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-3xl sm:text-4xl font-bold mb-6 text-center text-blue-700">
+          🚨 Real-Time DDoS Traffic Monitor
+        </h1>
+
+        <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
+          {/* Active Users Card */}
+          <div className="bg-white shadow-lg p-6 rounded-2xl">
+            <h2 className="text-xl font-semibold mb-4 text-gray-700">👥 Active Users</h2>
+            <p className="text-4xl font-bold text-green-600">{activeUsers.length}</p>
+          </div>
+
+          {/* Visitor Details Card */}
+          <div className="bg-white shadow-lg p-6 rounded-2xl h-[400px] overflow-y-auto">
+            <h2 className="text-xl font-semibold mb-4 text-gray-700">🌐 Live Visitors</h2>
+            <div className="space-y-4">
+              {activeUsers.length === 0 ? (
+                <p className="text-gray-400">No visitors connected.</p>
+              ) : (
+                activeUsers.map((user, index) => (
+                  <div
+                    key={index}
+                    className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition"
+                  >
+                    <p className="text-sm font-medium text-gray-700">IP: <span className="text-blue-600">{user.ip}</span></p>
+                    <p className="text-xs text-gray-600 break-words">UA: {user.userAgent}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <footer className="mt-8 text-center text-sm text-gray-500">
+          &copy; {new Date().getFullYear()} Traffic Monitor • Built for DDoS Insight
+        </footer>
+      </div>
     </div>
   );
-}
+};
 
 export default App;
