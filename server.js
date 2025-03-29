@@ -3,7 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const admin = require('firebase-admin');
 const cors = require('cors');
-const axios = require('axios'); // <-- Add axios for location lookup
+const axios = require('axios');
 
 if (!process.env.FIREBASE_CREDENTIALS) {
     console.error("❌ FIREBASE_CREDENTIALS environment variable is missing.");
@@ -18,14 +18,11 @@ try {
     process.exit(1);
 }
 
-// ✅ Initialize Firebase Admin SDK
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
 
-// 🔥 Firestore DB Reference
 const db = admin.firestore();
-
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -36,35 +33,37 @@ const io = socketIo(server, {
 
 app.use(cors({ origin: "*" }));
 
-// ✅ Store Active Users
 let activeUsers = new Map();
 
+// 🔍 Extract clean public IP
+function extractIp(socket) {
+    let ip = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address || "";
+    if (ip.includes(',')) {
+        ip = ip.split(',')[0];
+    }
+    return ip.trim();
+}
+
 io.on('connection', async (socket) => {
-    const clientIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
+    const clientIp = extractIp(socket);
     const userAgent = socket.handshake.headers['user-agent'];
     const timestamp = new Date();
 
-    // 📍 Get location info using ipapi with default values
-    let locationData = {
-        city: "Unknown",
-        region: "Unknown",
-        country: "Unknown",
-        org: "Unknown"
-    };
-
+    let locationData = {};
     try {
-        const response = await axios.get(`https://ipapi.co/${clientIp}/json/`);
+        const response = await axios.get(`http://ip-api.com/json/${clientIp}`);
+        console.log("🌍 IP Lookup Response:", response.data);
+
         locationData = {
             city: response.data.city || "Unknown",
-            region: response.data.region || "Unknown",
-            country: response.data.country_name || "Unknown",
+            region: response.data.regionName || "Unknown",
+            country: response.data.country || "Unknown",
             org: response.data.org || "Unknown"
         };
     } catch (error) {
         console.warn("🌐 Could not fetch location:", error.message);
     }
 
-    // 📝 Log to Firestore
     try {
         await db.collection('visitors').add({
             ip: clientIp,
@@ -79,7 +78,6 @@ io.on('connection', async (socket) => {
     }
 
     activeUsers.set(socket.id, { ip: clientIp, userAgent });
-
     io.emit('activeUsers', Array.from(activeUsers.values()));
     console.log(`🟢 New Visitor: ${clientIp}`);
 
@@ -91,13 +89,10 @@ io.on('connection', async (socket) => {
 });
 
 const path = require("path");
-
 app.use(express.static(path.join(__dirname, "client", "build")));
-
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "client", "build", "index.html"));
+    res.sendFile(path.join(__dirname, "client", "build", "index.html"));
 });
 
-// ✅ Start Server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
