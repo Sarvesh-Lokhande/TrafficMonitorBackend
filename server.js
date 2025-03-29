@@ -38,18 +38,22 @@ app.use(cors({ origin: "*" }));
 // ✅ Store Active Users
 let activeUsers = new Map();
 
-io.on('connection', (socket) => {
-    const clientIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
-    const userAgent = socket.handshake.headers['user-agent'];
+io.on("connection", (socket) => {
+    const clientIp = socket.handshake.headers["x-forwarded-for"] || socket.handshake.address;
+    const userAgent = socket.handshake.headers["user-agent"];
+    const origin = socket.handshake.headers["origin"]; // Get the origin of the request
 
-    activeUsers.set(socket.id, { ip: clientIp, userAgent });
+    // ✅ Allow logging ONLY if the request comes from your frontend
+    if (origin === "https://review-system-backend-topaz.vercel.app") {
+        activeUsers.set(socket.id, { ip: clientIp, userAgent });
 
-    io.emit('activeUsers', Array.from(activeUsers.values()));
-    console.log(`🟢 New Visitor: ${clientIp}`);
+        io.emit("activeUsers", Array.from(activeUsers.values()));
+        console.log(`🟢 New Visitor: ${clientIp} from ${origin}`);
+    }
 
-    socket.on('disconnect', () => {
+    socket.on("disconnect", () => {
         activeUsers.delete(socket.id);
-        io.emit('activeUsers', Array.from(activeUsers.values()));
+        io.emit("activeUsers", Array.from(activeUsers.values()));
         console.log(`🔴 Visitor Left: ${clientIp}`);
     });
 });
