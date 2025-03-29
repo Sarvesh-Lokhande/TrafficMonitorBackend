@@ -36,7 +36,7 @@ const io = socketIo(server, {
 
 app.use(cors({ origin: "*" }));
 
-//✅ Store Active Users
+// ✅ Store Active Users
 let activeUsers = new Map();
 
 io.on('connection', async (socket) => {
@@ -44,15 +44,21 @@ io.on('connection', async (socket) => {
     const userAgent = socket.handshake.headers['user-agent'];
     const timestamp = new Date();
 
-    // 📍 Get location info using ipapi
-    let locationData = {};
+    // 📍 Get location info using ipapi with default values
+    let locationData = {
+        city: "Unknown",
+        region: "Unknown",
+        country: "Unknown",
+        org: "Unknown"
+    };
+
     try {
         const response = await axios.get(`https://ipapi.co/${clientIp}/json/`);
         locationData = {
-            city: response.data.city,
-            region: response.data.region,
-            country: response.data.country_name,
-            org: response.data.org
+            city: response.data.city || "Unknown",
+            region: response.data.region || "Unknown",
+            country: response.data.country_name || "Unknown",
+            org: response.data.org || "Unknown"
         };
     } catch (error) {
         console.warn("🌐 Could not fetch location:", error.message);
