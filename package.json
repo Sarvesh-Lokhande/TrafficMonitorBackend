@@ -10,6 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "pcap": "^2.0.0",
     "axios": "^1.0.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
