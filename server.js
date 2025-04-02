@@ -4,6 +4,7 @@ const socketIo = require('socket.io');
 const admin = require('firebase-admin');
 const cors = require('cors');
 const axios = require('axios');
+require('./packetCapture'); // ✅ Import packet capturing
 
 if (!process.env.FIREBASE_CREDENTIALS) {
     console.error("❌ FIREBASE_CREDENTIALS environment variable is missing.");
@@ -36,7 +37,7 @@ const io = socketIo(server, {
 
 app.use(cors({ origin: "*" }));
 
-//✅ Store Active Users
+// ✅ Store Active Users
 let activeUsers = new Map();
 
 io.on('connection', async (socket) => {
