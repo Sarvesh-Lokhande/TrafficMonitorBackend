@@ -1,11 +1,12 @@
-const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
-const admin = require('firebase-admin');
-const cors = require('cors');
-const axios = require('axios');
-require('./packetCapture'); // ✅ Import packet capturing
+const express = require("express");
+const http = require("http");
+const socketIo = require("socket.io");
+const admin = require("firebase-admin");
+const cors = require("cors");
+const axios = require("axios");
+const rateLimit = require("express-rate-limit");
 
+// ✅ Check for Firebase Credentials
 if (!process.env.FIREBASE_CREDENTIALS) {
     console.error("❌ FIREBASE_CREDENTIALS environment variable is missing.");
     process.exit(1);
@@ -37,61 +38,107 @@ const io = socketIo(server, {
 
 app.use(cors({ origin: "*" }));
 
+// ✅ Rate Limiting (Blocks DDoS Attempts)
+const limiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 100, // Limit each IP to 100 requests per minute
+    message: "⚠️ Too many requests, please try again later."
+});
+app.use(limiter);
+
 // ✅ Store Active Users
 let activeUsers = new Map();
 
-io.on('connection', async (socket) => {
-    const clientIpHeader = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
-    const clientIp = clientIpHeader.split(',')[0].trim(); // handle multiple IPs
-    const userAgent = socket.handshake.headers['user-agent'];
-    const timestamp = new Date();
+// ✅ Function to Get Client IP Safely
+const getClientIp = (socket) => {
+    let ip = socket.handshake.headers["x-forwarded-for"]?.split(",")[0].trim();
+    return ip || socket.handshake.address || "Unknown IP";
+};
 
-    // 📍 Get location info using IPinfo.io
-    let locationData = {};
+// ✅ Function to Get Location Data
+const getLocationData = async (ip) => {
     try {
-       const response = await axios.get(`https://ipinfo.io/${clientIp}?token=${process.env.IPINFO_TOKEN}`);
-        locationData = {
-            city: response.data.city || 'Unknown',
-            region: response.data.region || 'Unknown',
-            country: response.data.country || 'Unknown',
-            org: response.data.org || 'Unknown'
+        const response = await axios.get(`https://ipinfo.io/${ip}?token=${process.env.IPINFO_TOKEN}`);
+        return {
+            city: response.data.city || "Unknown",
+            region: response.data.region || "Unknown",
+            country: response.data.country || "Unknown",
+            org: response.data.org || "Unknown"
         };
     } catch (error) {
         console.warn("🌐 Could not fetch location:", error.message);
+        return {};
     }
+};
 
-    // 📝 Log to Firestore
-    try {
-        await db.collection('visitors').add({
-            ip: clientIp,
-            userAgent,
-            timestamp,
-            location: locationData,
-            socketId: socket.id
+// ✅ Firestore Batch Logging
+let logBuffer = [];
+setInterval(async () => {
+    if (logBuffer.length > 0) {
+        const batch = db.batch();
+        logBuffer.forEach((log) => {
+            const ref = db.collection("visitors").doc();
+            batch.set(ref, log);
         });
-        console.log(`📝 Logged visitor: ${clientIp}`, locationData);
-    } catch (err) {
-        console.error("❌ Firestore log error:", err);
+        await batch.commit();
+        logBuffer = [];
+        console.log("📤 Batched logs sent to Firestore.");
     }
+}, 10000); // Every 10 seconds
+
+// ✅ Middleware to Log Requests
+app.use(async (req, res, next) => {
+    const clientIp = req.headers["x-forwarded-for"]?.split(",")[0].trim() || req.socket.remoteAddress;
+    const userAgent = req.headers["user-agent"];
+    const timestamp = new Date();
+
+    const locationData = await getLocationData(clientIp);
+
+    logBuffer.push({
+        ip: clientIp,
+        userAgent,
+        timestamp,
+        location: locationData
+    });
+
+    console.log(`🌐 Request from: ${clientIp}, User-Agent: ${userAgent}`);
+    next();
+});
+
+// ✅ WebSocket for Real-Time Visitor Tracking
+io.on("connection", async (socket) => {
+    const clientIp = getClientIp(socket);
+    const userAgent = socket.handshake.headers["user-agent"];
+    const timestamp = new Date();
+
+    const locationData = await getLocationData(clientIp);
+
+    // 📝 Log visitor data in Firestore
+    logBuffer.push({
+        ip: clientIp,
+        userAgent,
+        timestamp,
+        location: locationData,
+        socketId: socket.id
+    });
 
     activeUsers.set(socket.id, { ip: clientIp, userAgent });
 
-    io.emit('activeUsers', Array.from(activeUsers.values()));
+    io.emit("activeUsers", Array.from(activeUsers.values()));
     console.log(`🟢 New Visitor: ${clientIp}`);
 
-    socket.on('disconnect', () => {
+    socket.on("disconnect", () => {
         activeUsers.delete(socket.id);
-        io.emit('activeUsers', Array.from(activeUsers.values()));
+        io.emit("activeUsers", Array.from(activeUsers.values()));
         console.log(`🔴 Visitor Left: ${clientIp}`);
     });
 });
 
+// ✅ Serve Frontend (If Using React/Vue/Next.js)
 const path = require("path");
-
 app.use(express.static(path.join(__dirname, "client", "build")));
-
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "client", "build", "index.html"));
+    res.sendFile(path.join(__dirname, "client", "build", "index.html"));
 });
 
 // ✅ Start Server
